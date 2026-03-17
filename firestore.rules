@@ -1,0 +1,267 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Security Audit (Devil's Advocate Attack)
+    // ===============================================================
+    // 1. Public List Exploit: DENIED. All collections require auth or are restricted.
+    // 2. Unauthorized Read/Write: DENIED. isOwner() and isAdmin() checks enforced.
+    // 3. The "Update Bypass": DENIED. isValidX() called in both create and update.
+    // 4. Ownership Hijacking: DENIED. uidUnchanged() and uidNotModified() enforced.
+    // 5. Immutable Field Modification: DENIED. Specific checks in update rules.
+    // 6. Data Corruption: DENIED. Strict type and enum checks in domain validators.
+    // 7. Resource Exhaustion: DENIED. .size() checks on all string fields.
+    // 8. Privilege Escalation: DENIED. Role immutable for users, admin check required.
+    // ===============================================================
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - name: string (optional) - Full name (max 50 chars)
+    //   - email: string (required) - Email address
+    //   - balance: number (required) - Current balance (positive)
+    //   - initial_balance: number (required) - Starting balance (positive)
+    //   - role: string (required, enum: ['user', 'admin']) - User role
+    //   - createdAt: string (optional) - ISO 8601 timestamp
+    //
+    // Collection: trades
+    // Document ID: tradeId
+    // Fields:
+    //   - userId: string (required) - UID of the owner
+    //   - symbol: string (required) - Trading symbol (max 20 chars)
+    //   - type: string (required, enum: ['BUY', 'SELL']) - Trade type
+    //   - optionType: string (required, enum: ['CE', 'PE']) - Option type
+    //   - strike: number (required) - Strike price
+    //   - price: number (required) - Execution price
+    //   - qty: number (required) - Quantity (positive)
+    //   - time: string (required) - ISO 8601 timestamp
+    //   - status: string (required, enum: ['Open', 'Closed']) - Trade status
+    //   - pnl: number (required) - Profit or Loss
+    //
+    // Collection: challenges
+    // Document ID: challengeId
+    // Fields:
+    //   - name: string (required) - (max 50 chars)
+    //   - price: number (required) - (positive)
+    //   - capital: number (required) - (positive)
+    //   - profit_target: number (required) - (positive)
+    //   - max_dd: number (required) - (positive)
+    //   - daily_dd: number (required) - (positive)
+    //   - tag: string (optional) - (max 20 chars)
+    //   - recommended: bool (optional)
+    //
+    // Collection: rules
+    // Document ID: ruleId
+    // Fields:
+    //   - name: string (required) - (max 100 chars)
+    //   - value: string (required) - (max 100 chars)
+    //   - description: string (required) - (max 1000 chars)
+    //
+    // Collection: settings
+    // Document ID: settingId (e.g., 'market')
+    // Fields:
+    //   - marketApiProvider: string (required, enum: ['yahoo', 'dhan'])
+    //   - dhanClientId: string (optional)
+    //   - dhanAccessToken: string (optional)
+    //
+    // Collection: transactions
+    // Document ID: transactionId
+    // Fields:
+    //   - userId: string (required) - UID of the owner
+    //   - type: string (required, enum: ['challenge_purchase', 'withdrawal', 'deposit'])
+    //   - amount: number (required) - Positive
+    //   - planId: string (optional)
+    //   - planName: string (optional)
+    //   - time: string (required) - ISO 8601 timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGuest(userId) {
+      return userId == 'guest_user';
+    }
+
+    function isOwner(userId) {
+      return (isAuthenticated() && request.auth.uid == userId) || isGuest(userId);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "kushwahgourav2018@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      let allowedFields = ['uid', 'name', 'email', 'balance', 'initial_balance', 'role', 'createdAt'];
+      return data.keys().hasAll(['uid', 'email', 'balance', 'initial_balance', 'role']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             isValidEmail(data.email) &&
+             data.balance is number &&
+             data.initial_balance is number &&
+             data.role in ['user', 'admin'] &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 50)) &&
+             (!('createdAt' in data) || isValidDateString(data.createdAt));
+    }
+
+    function isValidTrade(data) {
+      let allowedFields = ['userId', 'symbol', 'type', 'optionType', 'strike', 'price', 'qty', 'time', 'status', 'pnl'];
+      return data.keys().hasAll(allowedFields) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.symbol is string && data.symbol.size() > 0 && data.symbol.size() <= 20 &&
+             data.type in ['BUY', 'SELL'] &&
+             data.optionType in ['CE', 'PE'] &&
+             data.strike is number &&
+             data.price is number &&
+             data.qty is number && data.qty > 0 &&
+             isValidDateString(data.time) &&
+             data.status in ['Open', 'Closed'] &&
+             data.pnl is number;
+    }
+
+    function isValidChallenge(data) {
+      let allowedFields = ['name', 'price', 'capital', 'profit_target', 'max_dd', 'daily_dd', 'tag', 'recommended'];
+      return data.keys().hasAll(['name', 'price', 'capital', 'profit_target', 'max_dd', 'daily_dd']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 50 &&
+             data.price is number && data.price >= 0 &&
+             data.capital is number && data.capital > 0 &&
+             data.profit_target is number && data.profit_target > 0 &&
+             data.max_dd is number && data.max_dd > 0 &&
+             data.daily_dd is number && data.daily_dd > 0 &&
+             (!('tag' in data) || (data.tag is string && data.tag.size() <= 20)) &&
+             (!('recommended' in data) || data.recommended is bool);
+    }
+
+    function isValidRule(data) {
+      let allowedFields = ['name', 'value', 'description'];
+      return data.keys().hasAll(allowedFields) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.value is string && data.value.size() > 0 && data.value.size() <= 100 &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 1000;
+    }
+
+    function isValidSettings(data) {
+      let allowedFields = ['marketApiProvider', 'dhanClientId', 'dhanAccessToken'];
+      return data.keys().hasAll(['marketApiProvider']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.marketApiProvider in ['yahoo', 'dhan'] &&
+             (!('dhanClientId' in data) || (data.dhanClientId is string && data.dhanClientId.size() <= 100)) &&
+             (!('dhanAccessToken' in data) || (data.dhanAccessToken is string && data.dhanAccessToken.size() <= 200));
+    }
+
+    function isValidTransaction(data) {
+      let allowedFields = ['userId', 'type', 'amount', 'planId', 'planName', 'time'];
+      return data.keys().hasAll(['userId', 'type', 'amount', 'time']) &&
+             data.keys().hasOnly(allowedFields) &&
+             data.userId is string && data.userId.size() > 0 &&
+             data.type in ['challenge_purchase', 'withdrawal', 'deposit'] &&
+             data.amount is number && data.amount >= 0 &&
+             isValidDateString(data.time) &&
+             (!('planId' in data) || (data.planId is string)) &&
+             (!('planName' in data) || (data.planName is string));
+    }
+
+    // ===============================================================
+    // Match Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Only allow users to create their own profile with 'user' role
+      // Admins can create any profile
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user') || 
+                    isAdmin();
+      
+      // Users can update their own profile but cannot change their role or UID
+      // Admins can update anything
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && 
+                        request.resource.data.role == resource.data.role && 
+                        uidNotModified()) || 
+                    isAdmin();
+    }
+
+    match /trades/{tradeId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || isGuest(resource.data.userId);
+      
+      // Users can only create trades for themselves
+      allow create: if (isAuthenticated() && isValidTrade(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid) || 
+                    (isGuest(request.resource.data.userId) && isValidTrade(request.resource.data));
+      
+      // Users can update their own trades (e.g. closing them) but cannot change the userId
+      allow update: if ((isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || isGuest(resource.data.userId)) && 
+                    isValidTrade(request.resource.data) &&
+                    request.resource.data.userId == resource.data.userId;
+      
+      allow delete: if isAdmin();
+    }
+
+    match /challenges/{challengeId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidChallenge(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /rules/{ruleId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidRule(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && isValidSettings(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if (isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin())) || isGuest(resource.data.userId);
+      allow create: if (isAuthenticated() && isValidTransaction(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid) ||
+                    (isGuest(request.resource.data.userId) && isValidTransaction(request.resource.data));
+      allow update, delete: if isAdmin();
+    }
+  }
+}

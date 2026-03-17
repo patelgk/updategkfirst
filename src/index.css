@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap');
+
+@theme {
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-primary: #ec5b13;
+  --color-accent-neon: #39ff14;
+  --color-background-dark: #160d08;
+  --color-trading-up: #22c55e;
+  --color-trading-down: #ef4444;
+}
+
+@layer base {
+  body {
+    @apply bg-[#f8f6f6] dark:bg-[#160d08] text-slate-900 dark:text-slate-100 antialiased;
+  }
+}
+
+@layer utilities {
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

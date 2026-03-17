@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and account balance information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "maxLength": 50, "description": "Full name of the user" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "balance": { "type": "number", "minimum": 0, "description": "Current available balance" },
+        "initial_balance": { "type": "number", "minimum": 0, "description": "Starting balance for the challenge" },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "User role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email", "balance", "initial_balance", "role"]
+    },
+    "Trade": {
+      "title": "Trade",
+      "description": "A single trade record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user who made the trade" },
+        "symbol": { "type": "string", "maxLength": 20, "description": "Trading symbol (e.g., Nifty 50)" },
+        "type": { "type": "string", "enum": ["BUY", "SELL"], "description": "Trade type" },
+        "optionType": { "type": "string", "enum": ["CE", "PE"], "description": "Option type" },
+        "strike": { "type": "number", "description": "Strike price" },
+        "price": { "type": "number", "description": "Execution price" },
+        "qty": { "type": "number", "minimum": 1, "description": "Quantity" },
+        "time": { "type": "string", "format": "date-time", "description": "Trade execution time" },
+        "status": { "type": "string", "enum": ["Open", "Closed"], "description": "Trade status" },
+        "pnl": { "type": "number", "description": "Profit or Loss" }
+      },
+      "required": ["userId", "symbol", "type", "optionType", "strike", "price", "qty", "time", "status", "pnl"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "A trading challenge plan",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 50, "description": "Plan name" },
+        "price": { "type": "number", "minimum": 0, "description": "Purchase price" },
+        "capital": { "type": "number", "minimum": 1, "description": "Virtual capital provided" },
+        "profit_target": { "type": "number", "minimum": 0.1, "description": "Profit target percentage" },
+        "max_dd": { "type": "number", "minimum": 0.1, "description": "Maximum drawdown percentage" },
+        "daily_dd": { "type": "number", "minimum": 0.1, "description": "Daily drawdown percentage" },
+        "tag": { "type": "string", "maxLength": 20, "description": "Badge or tag" },
+        "recommended": { "type": "boolean", "description": "Whether plan is recommended" }
+      },
+      "required": ["name", "price", "capital", "profit_target", "max_dd", "daily_dd"]
+    },
+    "Rule": {
+      "title": "Rule",
+      "description": "A trading rule or FAQ item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100, "description": "Rule name" },
+        "value": { "type": "string", "maxLength": 100, "description": "Rule value or summary" },
+        "description": { "type": "string", "maxLength": 1000, "description": "Detailed description" }
+      },
+      "required": ["name", "value", "description"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Application settings and configurations",
+      "type": "object",
+      "properties": {
+        "marketApiProvider": { "type": "string", "enum": ["yahoo", "dhan"], "description": "Active market data provider" },
+        "dhanClientId": { "type": "string", "description": "Dhan Client ID" },
+        "dhanAccessToken": { "type": "string", "description": "Dhan Access Token" }
+      },
+      "required": ["marketApiProvider"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A record of a financial transaction (e.g., challenge purchase)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user" },
+        "type": { "type": "string", "enum": ["challenge_purchase", "withdrawal", "deposit"], "description": "Transaction type" },
+        "amount": { "type": "number", "minimum": 0, "description": "Transaction amount" },
+        "planId": { "type": "string", "description": "ID of the plan (if applicable)" },
+        "planName": { "type": "string", "description": "Name of the plan (if applicable)" },
+        "time": { "type": "string", "format": "date-time", "description": "Transaction timestamp" }
+      },
+      "required": ["userId", "type", "amount", "time"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Collection of all trades"
+    },
+    "/challenges/{challengeId}": {
+      "schema": "Challenge",
+      "description": "Available challenge plans"
+    },
+    "/rules/{ruleId}": {
+      "schema": "Rule",
+      "description": "Trading rules and FAQs"
+    },
+    "/settings/{settingId}": {
+      "schema": "Settings",
+      "description": "Global application settings"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Financial transaction history"
+    }
+  }
+}
