@@ -182,12 +182,11 @@ service cloud.firestore {
     }
 
     function isValidSettings(data) {
-      let allowedFields = ['marketApiProvider', 'dhanClientId', 'dhanAccessToken'];
-      return data.keys().hasAll(['marketApiProvider']) &&
+      let allowedFields = ['activeProviderId', 'providers', 'marketApiProvider', 'dhanClientId', 'dhanAccessToken'];
+      return (data.keys().hasAll(['activeProviderId', 'providers']) || data.keys().hasAll(['marketApiProvider'])) &&
              data.keys().hasOnly(allowedFields) &&
-             data.marketApiProvider in ['yahoo', 'dhan'] &&
-             (!('dhanClientId' in data) || (data.dhanClientId is string && data.dhanClientId.size() <= 100)) &&
-             (!('dhanAccessToken' in data) || (data.dhanAccessToken is string && data.dhanAccessToken.size() <= 200));
+             (!('activeProviderId' in data) || data.activeProviderId is string) &&
+             (!('providers' in data) || data.providers is list);
     }
 
     function isValidTransaction(data) {

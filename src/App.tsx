@@ -36,6 +36,8 @@ import {
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut,
   User as FirebaseUser
 } from 'firebase/auth';
@@ -170,7 +172,7 @@ const Header = ({ activeTab, onBack, isSubView, onLogout }: { activeTab: string,
           </div>
         )}
         <h1 className="text-xl font-bold tracking-tight">
-          {activeTab === 'admin' ? 'Admin Dashboard' : isSubView ? 'Option Chain' : 'IndiFunded'}
+          {isSubView ? 'Option Chain' : 'IndiFunded'}
         </h1>
         {!isSubView && activeTab === 'trade' && (
           <span className="bg-slate-100 dark:bg-white/5 text-[10px] font-bold px-2 py-0.5 rounded-full text-slate-500 flex items-center gap-1">
@@ -191,6 +193,196 @@ const Header = ({ activeTab, onBack, isSubView, onLogout }: { activeTab: string,
         </button>
       </div>
     </header>
+  );
+};
+
+const AuthView = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        // Create user profile in Firestore
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            name: name || email.split('@')[0],
+            email: email,
+            balance: 0, // Start with 0 balance
+            initial_balance: 0,
+            role: 'user',
+            createdAt: new Date().toISOString()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+        }
+      }
+      onAuthSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    setLoading(true);
+    setError('');
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Check if user profile exists, if not create it
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            uid: user.uid,
+            name: user.displayName || user.email?.split('@')[0] || 'Trader',
+            email: user.email,
+            balance: 0,
+            initial_balance: 0,
+            role: 'user',
+            createdAt: new Date().toISOString()
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+        }
+      }
+      onAuthSuccess();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[80vh] p-6">
+      <div className="w-full max-w-sm space-y-8">
+        <div className="text-center">
+          <div className="inline-flex p-4 rounded-3xl bg-primary/10 mb-4">
+            <TrendingUp className="w-12 h-12 text-primary" />
+          </div>
+          <h2 className="text-3xl font-black tracking-tight">
+            {isLogin ? 'Welcome Back' : 'Create Account'}
+          </h2>
+          <p className="text-slate-400 font-bold text-sm mt-2 uppercase tracking-widest">
+            {isLogin ? 'Sign in to your trading account' : 'Join the elite trading community'}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <button
+            onClick={handleGoogleAuth}
+            disabled={loading}
+            className="w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-200 font-bold rounded-2xl flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-white/10 transition-all disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path
+                fill="currentColor"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="currentColor"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-1 .67-2.28 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="currentColor"
+                d="M5.84 14.09c-.22-.67-.35-1.39-.35-2.09s.13-1.42.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+              />
+              <path
+                fill="currentColor"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200 dark:border-white/10"></div>
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase font-bold">
+              <span className="bg-white dark:bg-[#160d08] px-4 text-slate-400">Or email</span>
+            </div>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+          {error && (
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-500 text-xs font-bold">
+              {error}
+            </div>
+          )}
+          {!isLogin && (
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase ml-4">Full Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="John Doe"
+                className="w-full px-6 py-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-sm focus:outline-none focus:border-primary transition-all"
+                required
+              />
+            </div>
+          )}
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-4">Email Address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="w-full px-6 py-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-sm focus:outline-none focus:border-primary transition-all"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-slate-400 uppercase ml-4">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-6 py-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-sm focus:outline-none focus:border-primary transition-all"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-5 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all disabled:opacity-50"
+          >
+            {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="text-center">
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-xs font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
+          >
+            {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
   );
 };
 
@@ -999,8 +1191,371 @@ const ChallengesView = ({ onSelectPlan, plans, rules }: { onSelectPlan: (plan: P
   );
 };
 
-const ProfileView = ({ onOpenAdmin, userProfile, user }: { onOpenAdmin: () => void, userProfile: any, user: any }) => {
-  const isAdmin = userProfile?.role === 'admin' || user?.email === 'kushwahgourav2018@gmail.com';
+const AdminView = ({ showToast }: { showToast: (msg: string, type?: 'success' | 'error') => void }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'clients' | 'rules' | 'api' | 'challenges'>('clients');
+  const [clients, setClients] = useState<any[]>([]);
+  const [rules, setRules] = useState<any[]>([]);
+  const [challenges, setChallenges] = useState<any[]>([]);
+  const [apiSettings, setApiSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAdminData = async () => {
+      setLoading(true);
+      try {
+        // Fetch Clients
+        const clientsSnap = await getDocs(collection(db, 'users'));
+        setClients(clientsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        // Fetch Rules
+        const rulesSnap = await getDocs(collection(db, 'rules'));
+        setRules(rulesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        // Fetch Challenges
+        const challengesSnap = await getDocs(collection(db, 'challenges'));
+        setChallenges(challengesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        // Fetch API Settings
+        const settingsSnap = await getDoc(doc(db, 'settings', 'market'));
+        if (settingsSnap.exists()) {
+          setApiSettings(settingsSnap.data());
+        } else {
+          setApiSettings({
+            activeProviderId: 'yahoo',
+            providers: [
+              { id: 'yahoo', name: 'Yahoo Finance', type: 'yahoo' },
+              { id: 'dhan', name: 'Dhan API', type: 'dhan', clientId: '', accessToken: '' }
+            ]
+          });
+        }
+      } catch (err) {
+        console.error('Admin fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAdminData();
+  }, []);
+
+  const handleUpdateBalance = async (clientId: string, newBalance: number) => {
+    try {
+      await updateDoc(doc(db, 'users', clientId), { balance: newBalance });
+      setClients(prev => prev.map(c => c.id === clientId ? { ...c, balance: newBalance } : c));
+      showToast('Balance updated successfully');
+    } catch (err) {
+      showToast('Failed to update balance', 'error');
+    }
+  };
+
+  const handleUpdateRule = async (ruleId: string, updates: any) => {
+    try {
+      await updateDoc(doc(db, 'rules', ruleId), updates);
+      setRules(prev => prev.map(r => r.id === ruleId ? { ...r, ...updates } : r));
+      showToast('Rule updated successfully');
+    } catch (err) {
+      showToast('Failed to update rule', 'error');
+    }
+  };
+
+  const handleUpdateApi = async (updates: any) => {
+    try {
+      await setDoc(doc(db, 'settings', 'market'), updates, { merge: true });
+      setApiSettings(updates);
+      showToast('API settings updated');
+    } catch (err) {
+      showToast('Failed to update API settings', 'error');
+    }
+  };
+
+  const handleUpdateChallenge = async (challengeId: string, updates: any) => {
+    try {
+      await updateDoc(doc(db, 'challenges', challengeId), updates);
+      setChallenges(prev => prev.map(c => c.id === challengeId ? { ...c, ...updates } : c));
+      showToast('Challenge updated');
+    } catch (err) {
+      showToast('Failed to update challenge', 'error');
+    }
+  };
+
+  const handleCreateChallenge = async () => {
+    const newChallenge = {
+      name: 'New Challenge',
+      price: 5000,
+      capital: 50000,
+      profit_target: 10,
+      max_dd: 10,
+      daily_dd: 5,
+      tag: 'Standard',
+      recommended: false
+    };
+    try {
+      const docRef = await addDoc(collection(db, 'challenges'), newChallenge);
+      setChallenges(prev => [...prev, { id: docRef.id, ...newChallenge }]);
+      showToast('New challenge created');
+    } catch (err) {
+      showToast('Failed to create challenge', 'error');
+    }
+  };
+
+  const handleDeleteChallenge = async (challengeId: string) => {
+    if (!confirm('Are you sure you want to delete this challenge?')) return;
+    try {
+      await deleteDoc(doc(db, 'challenges', challengeId));
+      setChallenges(prev => prev.filter(c => c.id !== challengeId));
+      showToast('Challenge deleted');
+    } catch (err) {
+      showToast('Failed to delete challenge', 'error');
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-slate-400">Loading Admin Panel...</div>;
+
+  return (
+    <div className="flex flex-col gap-6 p-4 pb-24">
+      <div className="flex gap-2 overflow-x-auto hide-scrollbar">
+        {[
+          { id: 'clients', label: 'Clients', icon: Users },
+          { id: 'challenges', label: 'Challenges', icon: Trophy },
+          { id: 'rules', label: 'Rules', icon: ShieldCheck },
+          { id: 'api', label: 'API Settings', icon: Settings }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveSubTab(tab.id as any)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+              activeSubTab === tab.id ? 'bg-primary text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSubTab === 'clients' && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold">Manage Clients</h3>
+          {clients.map(client => (
+            <div key={client.id} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 space-y-3">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-bold">{client.name}</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-widest">{client.email}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${client.role === 'admin' ? 'bg-primary/20 text-primary' : 'bg-slate-100 dark:bg-white/10 text-slate-500'}`}>
+                  {client.role?.toUpperCase() || 'USER'}
+                </span>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">Wallet Balance</p>
+                  <input
+                    type="number"
+                    defaultValue={client.balance}
+                    onBlur={(e) => handleUpdateBalance(client.id, Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg text-sm font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeSubTab === 'challenges' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold">Challenge Plans</h3>
+            <button 
+              onClick={handleCreateChallenge}
+              className="flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-xl text-xs font-bold"
+            >
+              <Plus className="w-3 h-3" />
+              Add Plan
+            </button>
+          </div>
+          {challenges.map(plan => (
+            <div key={plan.id} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 space-y-4">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Plan Name</label>
+                      <input
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.name}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Tag/Badge</label>
+                      <input
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.tag}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { tag: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Price (₹)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.price}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { price: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Capital (₹)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.capital}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { capital: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Target (%)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.profit_target}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { profit_target: Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Max DD (%)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.max_dd}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { max_dd: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Daily DD (%)</label>
+                      <input
+                        type="number"
+                        className="w-full bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold"
+                        defaultValue={plan.daily_dd}
+                        onBlur={(e) => handleUpdateChallenge(plan.id, { daily_dd: Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id={`rec-${plan.id}`}
+                      defaultChecked={plan.recommended}
+                      onChange={(e) => handleUpdateChallenge(plan.id, { recommended: e.target.checked })}
+                      className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                    />
+                    <label htmlFor={`rec-${plan.id}`} className="text-[10px] font-bold text-slate-400 uppercase cursor-pointer">Recommended Plan</label>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleDeleteChallenge(plan.id)}
+                  className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeSubTab === 'rules' && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-bold">Trading Rules</h3>
+          {rules.map(rule => (
+            <div key={rule.id} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 space-y-3">
+              <input
+                className="w-full bg-transparent font-bold text-sm focus:outline-none"
+                defaultValue={rule.name}
+                onBlur={(e) => handleUpdateRule(rule.id, { name: e.target.value })}
+              />
+              <input
+                className="w-full bg-transparent text-primary text-xs font-bold focus:outline-none"
+                defaultValue={rule.value}
+                onBlur={(e) => handleUpdateRule(rule.id, { value: e.target.value })}
+              />
+              <textarea
+                className="w-full bg-transparent text-slate-400 text-[10px] focus:outline-none resize-none"
+                defaultValue={rule.description}
+                rows={2}
+                onBlur={(e) => handleUpdateRule(rule.id, { description: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeSubTab === 'api' && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-bold">Market API Connections</h3>
+          <div className="space-y-4">
+            <div className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 space-y-4">
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Active Provider</p>
+              <div className="grid grid-cols-2 gap-2">
+                {apiSettings?.providers?.map((p: any) => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleUpdateApi({ ...apiSettings, activeProviderId: p.id })}
+                    className={`p-3 rounded-xl border text-xs font-bold transition-all ${
+                      apiSettings.activeProviderId === p.id 
+                        ? 'bg-primary/10 border-primary text-primary' 
+                        : 'border-slate-200 dark:border-white/10 text-slate-400'
+                    }`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {apiSettings?.providers?.map((p: any) => p.type === 'dhan' && (
+              <div key={p.id} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 space-y-4">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">Dhan API Credentials</p>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Client ID</label>
+                    <input
+                      type="text"
+                      defaultValue={p.clientId}
+                      onBlur={(e) => {
+                        const newProviders = apiSettings.providers.map((pr: any) => pr.id === p.id ? { ...pr, clientId: e.target.value } : pr);
+                        handleUpdateApi({ ...apiSettings, providers: newProviders });
+                      }}
+                      className="w-full px-4 py-2 bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-xl text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Access Token</label>
+                    <input
+                      type="password"
+                      defaultValue={p.accessToken}
+                      onBlur={(e) => {
+                        const newProviders = apiSettings.providers.map((pr: any) => pr.id === p.id ? { ...pr, accessToken: e.target.value } : pr);
+                        handleUpdateApi({ ...apiSettings, providers: newProviders });
+                      }}
+                      className="w-full px-4 py-2 bg-slate-50 dark:bg-[#160d08] border border-slate-200 dark:border-white/10 rounded-xl text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ProfileView = ({ userProfile, user, showToast }: { userProfile: any, user: any, showToast: (msg: string, type?: 'success' | 'error') => void }) => {
   const [tradeHistory, setTradeHistory] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -1033,7 +1588,7 @@ const ProfileView = ({ onOpenAdmin, userProfile, user }: { onOpenAdmin: () => vo
         <div className="text-center">
           <h2 className="text-2xl font-bold">{userProfile?.name || 'Trader'}</h2>
           <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">Pro Trader • ID: #{userProfile?.uid?.slice(-4) || '----'}</p>
-          <p className="text-[10px] text-slate-500 font-bold mt-1">{userProfile?.email}</p>
+          <p className="text-[10px] text-slate-500 font-bold mt-1">{userProfile?.email} ({userProfile?.role || 'user'})</p>
         </div>
       </div>
 
@@ -1048,20 +1603,24 @@ const ProfileView = ({ onOpenAdmin, userProfile, user }: { onOpenAdmin: () => vo
         </div>
       </div>
 
-      <div className="space-y-2">
-        {isAdmin && (
-          <button 
-            onClick={onOpenAdmin}
-            className="w-full flex items-center justify-between p-4 bg-primary/10 border-primary/20 rounded-2xl border"
-          >
-            <div className="flex items-center gap-4">
-              <ShieldCheck className="w-5 h-5 text-primary" />
-              <span className="font-bold text-sm text-primary">Admin Panel</span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-primary" />
-          </button>
-        )}
+      {userProfile?.email === 'kushwahgourav2018@gmail.com' && userProfile?.role !== 'admin' && (
+        <button
+          onClick={async () => {
+            try {
+              await updateDoc(doc(db, 'users', user.uid), { role: 'admin' });
+              showToast('Admin role granted!');
+            } catch (err) {
+              console.error(err);
+            }
+          }}
+          className="w-full py-4 bg-primary/10 text-primary font-bold rounded-2xl border border-primary/20 hover:bg-primary/20 transition-all flex items-center justify-center gap-2"
+        >
+          <ShieldCheck className="w-5 h-5" />
+          Activate Admin Access
+        </button>
+      )}
 
+      <div className="space-y-2">
         {[
           { icon: Wallet, label: 'Withdraw Funds' },
           { icon: Trophy, label: 'My Certificates' },
@@ -1131,807 +1690,6 @@ const ProfileView = ({ onOpenAdmin, userProfile, user }: { onOpenAdmin: () => vo
   );
 };
 
-const AdminView = ({ plans, rules, onUpdatePlans, onUpdateRules, showToast }: { plans: Plan[], rules: Rule[], onUpdatePlans: () => void, onUpdateRules: () => void, showToast: (msg: string, type?: 'success' | 'error') => void }) => {
-  const [clients, setClients] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'challenges' | 'rules' | 'settings'>('clients');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
-  const [editingRule, setEditingRule] = useState<Rule | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string, type: 'plan' | 'rule' } | null>(null);
-
-  const [marketSettings, setMarketSettings] = useState<any>({
-    activeProviderId: 'yahoo',
-    providers: [
-      { id: 'yahoo', name: 'Yahoo Finance', type: 'yahoo' },
-      { id: 'dhan', name: 'Dhan API', type: 'dhan', clientId: '', accessToken: '' }
-    ]
-  });
-  const [showAddProvider, setShowAddProvider] = useState(false);
-  const [newProvider, setNewProvider] = useState({ name: '', type: 'custom', url: '', clientId: '', accessToken: '' });
-
-  useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const docRef = doc(db, 'settings', 'market');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as any;
-          // Migration logic for legacy settings
-          if (data.marketApiProvider && !data.activeProviderId) {
-            setMarketSettings({
-              activeProviderId: data.marketApiProvider,
-              providers: [
-                { id: 'yahoo', name: 'Yahoo Finance', type: 'yahoo' },
-                { id: 'dhan', name: 'Dhan API', type: 'dhan', clientId: data.dhanClientId || '', accessToken: data.dhanAccessToken || '' }
-              ]
-            });
-          } else {
-            setMarketSettings({
-              activeProviderId: data.activeProviderId || 'yahoo',
-              providers: Array.isArray(data.providers) ? data.providers : [
-                { id: 'yahoo', name: 'Yahoo Finance', type: 'yahoo' },
-                { id: 'dhan', name: 'Dhan API', type: 'dhan', clientId: '', accessToken: '' }
-              ]
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch settings:', err);
-      }
-    };
-    fetchSettings();
-  }, []);
-
-  const handleSaveSettings = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await setDoc(doc(db, 'settings', 'market'), marketSettings);
-      showToast('Settings saved successfully! The server will update shortly.');
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-      showToast('Failed to save settings', 'error');
-    }
-  };
-
-  const handleAddProvider = () => {
-    const id = `provider-${Date.now()}`;
-    const providerToAdd = { ...newProvider, id };
-    setMarketSettings({
-      ...marketSettings,
-      providers: [...marketSettings.providers, providerToAdd as any]
-    });
-    setShowAddProvider(false);
-    setNewProvider({ name: '', type: 'custom', url: '', clientId: '', accessToken: '' });
-    showToast('Provider added to list. Don\'t forget to save!');
-  };
-
-  const handleRemoveProvider = (id: string) => {
-    if (id === 'yahoo' || id === 'dhan') return; // Protect defaults
-    setMarketSettings({
-      ...marketSettings,
-      activeProviderId: marketSettings.activeProviderId === id ? 'yahoo' : marketSettings.activeProviderId,
-      providers: marketSettings.providers.filter(p => p.id !== id)
-    });
-  };
-
-  useEffect(() => {
-    const fetchClients = async () => {
-      setError(null);
-      try {
-        const snapshot = await getDocs(collection(db, 'users'));
-        const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setClients(users);
-      } catch (err: any) {
-        console.error('Failed to fetch clients:', err);
-        setError(err.message || 'Failed to fetch clients. Check permissions.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchClients();
-  }, []);
-
-  const stats = useMemo(() => {
-    const totalEquity = clients.reduce((acc, c) => acc + (c.balance || 0), 0);
-    const profitableClients = clients.filter(c => (c.balance || 0) > (c.initial_balance || 0)).length;
-    const totalPnL = clients.reduce((acc, c) => acc + ((c.balance || 0) - (c.initial_balance || 0)), 0);
-    return { totalEquity, profitableClients, totalPnL };
-  }, [clients]);
-
-  const filteredClients = clients.filter(c => 
-    (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (c.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleSavePlan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingPlan) return;
-    try {
-      if (editingPlan.id && plans.find(p => p.id === editingPlan.id)) {
-        await updateDoc(doc(db, 'challenges', editingPlan.id), { ...editingPlan });
-        showToast('Plan updated successfully');
-      } else {
-        const { id, ...planData } = editingPlan;
-        await addDoc(collection(db, 'challenges'), planData);
-        showToast('Plan created successfully');
-      }
-      setEditingPlan(null);
-      onUpdatePlans();
-    } catch (err) {
-      console.error('Failed to save plan:', err);
-      showToast('Failed to save plan', 'error');
-    }
-  };
-
-  const handleDeletePlan = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'challenges', id));
-      showToast('Plan deleted successfully');
-      onUpdatePlans();
-    } catch (err) {
-      console.error('Failed to delete plan:', err);
-      showToast('Failed to delete plan', 'error');
-    }
-  };
-
-  const handleSaveRule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingRule) return;
-    try {
-      if (editingRule.id && rules.find(r => r.id === editingRule.id)) {
-        await updateDoc(doc(db, 'rules', editingRule.id), { ...editingRule });
-        showToast('Rule updated successfully');
-      } else {
-        const { id, ...ruleData } = editingRule;
-        await addDoc(collection(db, 'rules'), ruleData);
-        showToast('Rule created successfully');
-      }
-      setEditingRule(null);
-      onUpdateRules();
-    } catch (err) {
-      console.error('Failed to save rule:', err);
-      showToast('Failed to save rule', 'error');
-    }
-  };
-
-  const handleDeleteRule = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'rules', id));
-      showToast('Rule deleted successfully');
-      onUpdateRules();
-    } catch (err) {
-      console.error('Failed to delete rule:', err);
-      showToast('Failed to delete rule', 'error');
-    }
-  };
-
-  if (loading) return <div className="p-8 text-center text-slate-400 font-bold">Loading Admin Dashboard...</div>;
-
-  return (
-    <div className="flex flex-col gap-6 p-4 pb-24">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-3xl bg-primary text-white shadow-lg shadow-primary/20">
-          <div className="flex items-center gap-2 mb-2 opacity-80">
-            <Users className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase">Total Clients</span>
-          </div>
-          <p className="text-2xl font-black">{clients.length}</p>
-          <p className="text-[10px] font-bold mt-1 opacity-80">
-            {stats.profitableClients} Profitable
-          </p>
-        </div>
-        <div className="p-4 rounded-3xl bg-slate-900 text-white shadow-lg">
-          <div className="flex items-center gap-2 mb-2 opacity-80">
-            <Activity className="w-4 h-4" />
-            <span className="text-[10px] font-bold uppercase">Total Equity</span>
-          </div>
-          <p className="text-xl font-black">₹{(stats.totalEquity / 100000).toFixed(1)}L</p>
-          <p className={`text-[10px] font-bold mt-1 ${stats.totalPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {stats.totalPnL >= 0 ? '+' : ''}₹{stats.totalPnL.toLocaleString()} P&L
-          </p>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-500 text-xs font-bold">
-          {error}
-        </div>
-      )}
-
-      {/* Admin Tabs */}
-      <div className="flex p-1 bg-slate-100 dark:bg-white/5 rounded-2xl">
-        <button 
-          onClick={() => setActiveAdminTab('clients')}
-          className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-            activeAdminTab === 'clients' ? 'bg-white dark:bg-white/10 shadow-sm text-primary' : 'text-slate-400'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5" />
-          Clients
-        </button>
-        <button 
-          onClick={() => setActiveAdminTab('challenges')}
-          className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-            activeAdminTab === 'challenges' ? 'bg-white dark:bg-white/10 shadow-sm text-primary' : 'text-slate-400'
-          }`}
-        >
-          <Trophy className="w-3.5 h-3.5" />
-          Plans
-        </button>
-        <button 
-          onClick={() => setActiveAdminTab('rules')}
-          className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-            activeAdminTab === 'rules' ? 'bg-white dark:bg-white/10 shadow-sm text-primary' : 'text-slate-400'
-          }`}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          Rules
-        </button>
-        <button 
-          onClick={() => setActiveAdminTab('settings')}
-          className={`flex-1 py-2.5 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 ${
-            activeAdminTab === 'settings' ? 'bg-white dark:bg-white/10 shadow-sm text-primary' : 'text-slate-400'
-          }`}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          API
-        </button>
-      </div>
-
-      {activeAdminTab === 'clients' && (
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text"
-              placeholder="Search clients by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-sm focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            {filteredClients.map(client => (
-              <div key={client.id} className="p-5 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center font-bold text-primary">
-                      {client.name ? client.name[0] : '?'}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm">{client.name || 'Unknown User'}</h3>
-                      <p className="text-[10px] text-slate-400">{client.email}</p>
-                    </div>
-                  </div>
-                  <div className={`px-2 py-1 rounded text-[10px] font-black ${(client.equity || client.balance || 0) >= (client.initial_balance || 0) ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {(client.equity || client.balance || 0) >= (client.initial_balance || 0) ? 'PROFIT' : 'LOSS'}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-y-4 gap-x-6 py-4 border-y border-slate-100 dark:border-white/5">
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Current Equity</p>
-                    <p className="text-sm font-bold">₹{(client.equity || client.balance || 0).toLocaleString('en-IN')}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Open Positions</p>
-                    <p className="text-sm font-bold">{client.openPositions || 0}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Unrealized P&L</p>
-                    <p className={`text-sm font-bold ${(client.unrealizedPnl || 0) >= 0 ? 'text-trading-up' : 'text-trading-down'}`}>
-                      {(client.unrealizedPnl || 0) >= 0 ? '+' : ''}₹{(client.unrealizedPnl || 0).toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] uppercase text-slate-400 font-bold mb-0.5">Initial Capital</p>
-                    <p className="text-sm font-bold">₹{(client.initial_balance || 0).toLocaleString('en-IN')}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex gap-2">
-                  <button className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-white/5 text-[10px] font-bold uppercase hover:bg-slate-200 dark:hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
-                    <BarChart3 className="w-3 h-3" />
-                    Analytics
-                  </button>
-                  <button className="flex-1 py-2.5 rounded-xl bg-primary/10 text-primary text-[10px] font-bold uppercase hover:bg-primary/20 transition-colors flex items-center justify-center gap-2">
-                    <ArrowRightLeft className="w-3 h-3" />
-                    Trades
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeAdminTab === 'challenges' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-lg">Manage Challenge Plans</h3>
-            <button 
-              onClick={() => setEditingPlan({ id: '', name: '', price: 0, capital: 0, profit_target: 8, max_dd: 10, daily_dd: 5, tag: '', recommended: false })}
-              className="p-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            {(plans || []).map(plan => (
-              <div key={plan.id} className="p-5 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-sm">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h4 className="font-bold text-sm">{plan.name}</h4>
-                    <p className="text-xs text-primary font-black">₹{(plan.price || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setEditingPlan(plan)}
-                      className="p-2 text-slate-400 hover:text-primary transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => setDeleteConfirm({ id: plan.id, type: 'plan' })}
-                      className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 py-3 border-t border-slate-100 dark:border-white/5">
-                  <div className="text-center">
-                    <p className="text-[8px] uppercase text-slate-400 font-bold mb-0.5">Capital</p>
-                    <p className="text-[10px] font-bold">₹{(plan.capital || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="text-center border-x border-slate-100 dark:border-white/5">
-                    <p className="text-[8px] uppercase text-slate-400 font-bold mb-0.5">Target</p>
-                    <p className="text-[10px] font-bold">{plan.profit_target}%</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-[8px] uppercase text-slate-400 font-bold mb-0.5">Max DD</p>
-                    <p className="text-[10px] font-bold">{plan.max_dd}%</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeAdminTab === 'rules' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-lg">Manage Rules</h3>
-            <button 
-              onClick={() => setEditingRule({ id: '', name: '', value: '', description: '' })}
-              className="p-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            {(rules || []).map(rule => (
-              <div key={rule.id} className="p-5 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-sm">
-                <div className="flex justify-between items-start mb-2">
-                  <h4 className="font-bold text-sm">{rule.name}</h4>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setEditingRule(rule)}
-                      className="p-2 text-slate-400 hover:text-primary transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => setDeleteConfirm({ id: rule.id, type: 'rule' })}
-                      className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <p className="text-xs font-black text-primary mb-2">{rule.value}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed">{rule.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeAdminTab === 'settings' && (
-        <div className="space-y-6">
-          <div className="p-6 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <Settings className="w-5 h-5 text-primary" />
-                Market API Configuration
-              </h3>
-              <button 
-                onClick={() => setShowAddProvider(true)}
-                className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary/20 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSettings} className="space-y-6">
-              <div className="space-y-4">
-                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Active Provider</label>
-                <div className="grid grid-cols-1 gap-3">
-                  {(marketSettings.providers || []).map(provider => (
-                    <div key={provider.id} className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMarketSettings({ ...marketSettings, activeProviderId: provider.id })}
-                        className={`flex-1 py-4 px-4 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-between ${
-                          marketSettings.activeProviderId === provider.id 
-                            ? 'bg-primary/10 border-primary text-primary' 
-                            : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-400'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${marketSettings.activeProviderId === provider.id ? 'bg-primary' : 'bg-slate-300'}`} />
-                          {provider.name}
-                        </div>
-                        <span className="text-[10px] opacity-50 uppercase">{provider.type}</span>
-                      </button>
-                      {provider.id !== 'yahoo' && provider.id !== 'dhan' && (
-                        <button 
-                          type="button"
-                          onClick={() => handleRemoveProvider(provider.id)}
-                          className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500/20 transition-colors"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Active Provider Config */}
-              {marketSettings.providers?.find(p => p.id === marketSettings.activeProviderId)?.type === 'dhan' && (
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-4 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold text-primary uppercase">Dhan API Credentials</p>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Client ID</label>
-                      <input 
-                        type="text" 
-                        value={marketSettings.providers?.find(p => p.id === marketSettings.activeProviderId)?.clientId || ''}
-                        onChange={e => {
-                          const newProviders = [...(marketSettings.providers || [])];
-                          const idx = newProviders.findIndex(p => p.id === marketSettings.activeProviderId);
-                          if (idx !== -1) {
-                            newProviders[idx] = { ...newProviders[idx], clientId: e.target.value };
-                            setMarketSettings({ ...marketSettings, providers: newProviders });
-                          }
-                        }}
-                        placeholder="Enter Client ID"
-                        className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Access Token</label>
-                      <input 
-                        type="password" 
-                        value={marketSettings.providers?.find(p => p.id === marketSettings.activeProviderId)?.accessToken || ''}
-                        onChange={e => {
-                          const newProviders = [...(marketSettings.providers || [])];
-                          const idx = newProviders.findIndex(p => p.id === marketSettings.activeProviderId);
-                          if (idx !== -1) {
-                            newProviders[idx] = { ...newProviders[idx], accessToken: e.target.value };
-                            setMarketSettings({ ...marketSettings, providers: newProviders });
-                          }
-                        }}
-                        placeholder="Enter Access Token"
-                        className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {marketSettings.providers?.find(p => p.id === marketSettings.activeProviderId)?.type === 'custom' && (
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl space-y-4 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold text-primary uppercase">Custom API Configuration</p>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Endpoint URL</label>
-                      <input 
-                        type="text" 
-                        value={marketSettings.providers?.find(p => p.id === marketSettings.activeProviderId)?.url || ''}
-                        onChange={e => {
-                          const newProviders = [...(marketSettings.providers || [])];
-                          const idx = newProviders.findIndex(p => p.id === marketSettings.activeProviderId);
-                          if (idx !== -1) {
-                            newProviders[idx] = { ...newProviders[idx], url: e.target.value };
-                            setMarketSettings({ ...marketSettings, providers: newProviders });
-                          }
-                        }}
-                        placeholder="https://api.example.com/market"
-                        className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                    <p className="text-[9px] text-slate-400 italic">Expected JSON: {'{ "price": 123.45, "change": 1.2 }'}</p>
-                  </div>
-                </div>
-              )}
-
-              <button 
-                type="submit"
-                className="w-full py-4 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Save className="w-5 h-5" />
-                Save All API Settings
-              </button>
-            </form>
-          </div>
-
-          {/* Add Provider Modal */}
-          <AnimatePresence>
-            {showAddProvider && (
-              <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                <motion.div 
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  className="w-full max-w-sm bg-white dark:bg-[#1c1410] rounded-[40px] p-8 shadow-2xl border border-white/10"
-                >
-                  <h3 className="text-xl font-bold mb-6">Add New Provider</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Provider Name</label>
-                      <input 
-                        type="text" 
-                        value={newProvider.name}
-                        onChange={e => setNewProvider({ ...newProvider, name: e.target.value })}
-                        placeholder="e.g. Upstox, Custom Feed"
-                        className="w-full px-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Type</label>
-                      <select 
-                        value={newProvider.type}
-                        onChange={e => setNewProvider({ ...newProvider, type: e.target.value as any })}
-                        className="w-full px-4 py-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                      >
-                        <option value="custom">Custom API</option>
-                        <option value="dhan">Dhan API</option>
-                      </select>
-                    </div>
-                    <div className="flex gap-3 mt-6">
-                      <button 
-                        onClick={() => setShowAddProvider(false)}
-                        className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 font-bold text-sm"
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        onClick={handleAddProvider}
-                        disabled={!newProvider.name}
-                        className="flex-1 py-3 rounded-xl bg-primary text-white font-bold text-sm disabled:opacity-50"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            )}
-          </AnimatePresence>
-
-          <div className="p-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-2xl">
-            <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase mb-1">Important Note</p>
-            <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed">
-              Custom API providers must return a JSON object with at least a "price" field. The server will poll your custom URL every 5 seconds for each active symbol.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      <AnimatePresence>
-        {deleteConfirm && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-white dark:bg-[#1c1410] rounded-[40px] p-8 shadow-2xl border border-white/10 text-center"
-            >
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="w-8 h-8 text-red-500" />
-              </div>
-              <h3 className="text-xl font-bold mb-2">Are you sure?</h3>
-              <p className="text-sm text-slate-400 mb-6 font-bold">This action cannot be undone. This {deleteConfirm.type} will be permanently removed.</p>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 font-bold text-sm"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={() => {
-                    if (deleteConfirm.type === 'plan') handleDeletePlan(deleteConfirm.id);
-                    else handleDeleteRule(deleteConfirm.id);
-                    setDeleteConfirm(null);
-                  }}
-                  className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Plan Edit Modal */}
-      <AnimatePresence>
-        {editingPlan && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-white dark:bg-[#1c1410] rounded-[40px] p-8 shadow-2xl border border-white/10"
-            >
-              <h3 className="text-xl font-bold mb-6">Edit Plan</h3>
-              <form onSubmit={handleSavePlan} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Plan Name</label>
-                  <input 
-                    type="text" 
-                    value={editingPlan.name} 
-                    onChange={e => setEditingPlan({...editingPlan, name: e.target.value})}
-                    className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Price (₹)</label>
-                    <input 
-                      type="number" 
-                      value={editingPlan.price} 
-                      onChange={e => setEditingPlan({...editingPlan, price: Number(e.target.value)})}
-                      className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Capital (₹)</label>
-                    <input 
-                      type="number" 
-                      value={editingPlan.capital} 
-                      onChange={e => setEditingPlan({...editingPlan, capital: Number(e.target.value)})}
-                      className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Target %</label>
-                    <input 
-                      type="number" 
-                      value={editingPlan.profit_target} 
-                      onChange={e => setEditingPlan({...editingPlan, profit_target: Number(e.target.value)})}
-                      className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Max DD %</label>
-                    <input 
-                      type="number" 
-                      value={editingPlan.max_dd} 
-                      onChange={e => setEditingPlan({...editingPlan, max_dd: Number(e.target.value)})}
-                      className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Daily DD %</label>
-                    <input 
-                      type="number" 
-                      value={editingPlan.daily_dd} 
-                      onChange={e => setEditingPlan({...editingPlan, daily_dd: Number(e.target.value)})}
-                      className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button 
-                    type="button"
-                    onClick={() => setEditingPlan(null)}
-                    className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 font-bold text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit"
-                    className="flex-1 py-3 rounded-xl bg-primary text-white font-bold text-sm flex items-center justify-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    Save
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Rule Edit Modal */}
-      <AnimatePresence>
-        {editingRule && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-white dark:bg-[#1c1410] rounded-[40px] p-8 shadow-2xl border border-white/10"
-            >
-              <h3 className="text-xl font-bold mb-6">Edit Rule</h3>
-              <form onSubmit={handleSaveRule} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Rule Name</label>
-                  <input 
-                    type="text" 
-                    value={editingRule.name} 
-                    onChange={e => setEditingRule({...editingRule, name: e.target.value})}
-                    className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Value</label>
-                  <input 
-                    type="text" 
-                    value={editingRule.value} 
-                    onChange={e => setEditingRule({...editingRule, value: e.target.value})}
-                    className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
-                  <textarea 
-                    value={editingRule.description} 
-                    onChange={e => setEditingRule({...editingRule, description: e.target.value})}
-                    rows={3}
-                    className="w-full p-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm resize-none"
-                  />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button 
-                    type="button"
-                    onClick={() => setEditingRule(null)}
-                    className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-white/5 font-bold text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit"
-                    className="flex-1 py-3 rounded-xl bg-primary text-white font-bold text-sm flex items-center justify-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    Save
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 export default function AppWrapper() {
   return (
     <ErrorBoundary>
@@ -1992,16 +1750,7 @@ function App() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        setUser(firebaseUser);
-      } else {
-        // Provide a guest user for direct access
-        setUser({
-          uid: 'guest_user',
-          email: 'guest@indifunded.com',
-          displayName: 'Guest Trader'
-        } as FirebaseUser);
-      }
+      setUser(firebaseUser);
       setIsAuthReady(true);
     });
     return () => unsubscribeAuth();
@@ -2015,23 +1764,12 @@ function App() {
     const path = `users/${user.uid}`;
     const unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), async (snapshot) => {
       if (snapshot.exists()) {
-        setUserProfile(snapshot.data());
-      } else if (user.uid === 'guest_user') {
-        // Auto-create guest profile
-        const guestProfile = {
-          uid: 'guest_user',
-          name: 'Guest Trader',
-          email: 'guest@indifunded.com',
-          balance: 1000000,
-          initial_balance: 1000000,
-          role: 'user',
-          createdAt: new Date().toISOString()
-        };
-        try {
-          await setDoc(doc(db, 'users', 'guest_user'), guestProfile);
-          setUserProfile(guestProfile);
-        } catch (err) {
-          console.error('Failed to create guest profile:', err);
+        const data = snapshot.data();
+        setUserProfile(data);
+        
+        // Auto-bootstrap admin for specific email
+        if (data.email === 'kushwahgourav2018@gmail.com' && data.role !== 'admin') {
+          await updateDoc(doc(db, 'users', user.uid), { role: 'admin' });
         }
       }
     }, (err) => {
@@ -2048,6 +1786,18 @@ function App() {
 
   useEffect(() => {
     const socket = io();
+    let isConnected = false;
+
+    socket.on('connect', () => {
+      isConnected = true;
+      console.log('[Market] WebSocket connected');
+    });
+
+    socket.on('disconnect', () => {
+      isConnected = false;
+      console.log('[Market] WebSocket disconnected');
+    });
+
     socket.on('marketUpdate', (data) => {
       setMarketData(prev => ({
         ...prev,
@@ -2059,7 +1809,26 @@ function App() {
         }
       }));
     });
-    return () => { socket.disconnect(); };
+
+    // Polling fallback for serverless (Vercel)
+    const pollInterval = setInterval(async () => {
+      if (!isConnected) {
+        try {
+          const response = await fetch('/api/market/quotes');
+          if (response.ok) {
+            const data = await response.json();
+            setMarketData(prev => ({ ...prev, ...data }));
+          }
+        } catch (err) {
+          console.error('[Market] Polling failed:', err);
+        }
+      }
+    }, 5000); // Poll every 5 seconds if not connected via WS
+
+    return () => { 
+      socket.disconnect(); 
+      clearInterval(pollInterval);
+    };
   }, []);
 
   useEffect(() => {
@@ -2194,17 +1963,14 @@ function App() {
   const handleBuyChallenge = async (plan: Plan) => {
     if (!user || !userProfile) return;
     
-    if (userProfile.balance < plan.price) {
-      showToast('Insufficient balance in wallet', 'error');
-      return;
-    }
-
+    // In a real app, you'd check balance, but here we add capital to balance
     try {
-      const newBalance = userProfile.balance - plan.price;
+      const newBalance = (userProfile.balance || 0) + plan.capital;
       
       // Update user balance in Firestore
       await updateDoc(doc(db, 'users', user.uid), {
-        balance: newBalance
+        balance: newBalance,
+        initial_balance: newBalance // Also update initial balance for drawdown tracking
       });
 
       // Record the transaction
@@ -2217,7 +1983,7 @@ function App() {
         time: new Date().toISOString()
       });
 
-      showToast(`Successfully purchased ${plan.name}!`);
+      showToast(`Successfully purchased ${plan.name}! ₹${plan.capital.toLocaleString()} added to wallet.`);
     } catch (error) {
       console.error('Purchase failed:', error);
       showToast('Failed to purchase challenge', 'error');
@@ -2236,16 +2002,19 @@ function App() {
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
+  if (userProfile?.role === 'admin' || user?.email === 'kushwahgourav2018@gmail.com') {
+    navItems.push({ id: 'admin', label: 'Admin', icon: ShieldCheck });
+  }
+
   return (
     <div className="min-h-screen flex flex-col max-w-md mx-auto bg-white dark:bg-[#160d08] shadow-2xl relative">
       <Header 
         activeTab={activeTab} 
-        isSubView={(activeTab === 'trade' && showOptionChain) || activeTab === 'admin'}
+        isSubView={(activeTab === 'trade' && showOptionChain)}
         onBack={() => {
           if (showOptionChain) setShowOptionChain(false);
-          if (activeTab === 'admin') setActiveTab('profile');
         }}
-        onLogout={user && user.uid !== 'guest_user' ? handleLogout : undefined}
+        onLogout={user ? handleLogout : undefined}
       />
 
       <AnimatePresence>
@@ -2268,6 +2037,8 @@ function App() {
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
+        ) : !user ? (
+          <AuthView onAuthSuccess={() => showToast('Welcome!')} />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -2310,8 +2081,8 @@ function App() {
               )}
               {activeTab === 'challenges' && <ChallengesView onSelectPlan={handleBuyChallenge} plans={plans} rules={rules} />}
               {activeTab === 'portfolio' && <PortfolioView portfolio={portfolio} onClosePosition={handleClosePosition} userId={user.uid} allTrades={allTrades} />}
-              {activeTab === 'profile' && <ProfileView onOpenAdmin={() => setActiveTab('admin')} userProfile={userProfile} user={user} />}
-              {activeTab === 'admin' && <AdminView plans={plans} rules={rules} onUpdatePlans={fetchPlans} onUpdateRules={fetchRules} showToast={showToast} />}
+              {activeTab === 'profile' && <ProfileView userProfile={userProfile} user={user} showToast={showToast} />}
+              {activeTab === 'admin' && <AdminView showToast={showToast} />}
             </motion.div>
           </AnimatePresence>
         )}

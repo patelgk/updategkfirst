@@ -65,11 +65,17 @@
       "description": "Application settings and configurations",
       "type": "object",
       "properties": {
-        "marketApiProvider": { "type": "string", "enum": ["yahoo", "dhan"], "description": "Active market data provider" },
-        "dhanClientId": { "type": "string", "description": "Dhan Client ID" },
-        "dhanAccessToken": { "type": "string", "description": "Dhan Access Token" }
+        "activeProviderId": { "type": "string", "enum": ["yahoo", "dhan"], "description": "Active market data provider ID" },
+        "providers": { 
+          "type": "array", 
+          "items": { "type": "object" },
+          "description": "List of market data providers and their credentials" 
+        },
+        "marketApiProvider": { "type": "string", "enum": ["yahoo", "dhan"], "description": "Legacy: Active market data provider" },
+        "dhanClientId": { "type": "string", "description": "Legacy: Dhan Client ID" },
+        "dhanAccessToken": { "type": "string", "description": "Legacy: Dhan Access Token" }
       },
-      "required": ["marketApiProvider"]
+      "required": ["activeProviderId", "providers"]
     },
     "Transaction": {
       "title": "Transaction",

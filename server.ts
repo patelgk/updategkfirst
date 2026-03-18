@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
@@ -40,6 +41,7 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   try {
     const app = express();
+    app.use(cors());
     app.use(express.json());
     const httpServer = createServer(app);
     const io = new Server(httpServer, {
@@ -53,6 +55,16 @@ async function startServer() {
 
     app.get("/api/health", (req, res) => {
       res.json({ status: "ok", time: new Date().toISOString() });
+    });
+
+    app.get("/api/market/quotes", async (req, res) => {
+      try {
+        if (!settingsLoaded) await updateSettings();
+        await fetchMarketData();
+        res.json(marketData);
+      } catch (error) {
+        res.status(500).json({ error: (error as Error).message });
+      }
     });
 
     app.get("/api/market/history/:symbol", async (req, res) => {
@@ -105,6 +117,7 @@ async function startServer() {
     };
 
     // Polling for settings
+    let settingsLoaded = false;
     const updateSettings = async () => {
       if (!db) return;
       try {
@@ -128,6 +141,7 @@ async function startServer() {
           if (activeProvider && activeProvider.type === 'dhan') {
             dhan.updateCredentials(activeProvider.clientId || '', activeProvider.accessToken || '');
           }
+          settingsLoaded = true;
           console.log(`[Market Feed] Settings updated. Active: ${marketSettings.activeProviderId}`);
         }
       } catch (error) {
@@ -181,7 +195,13 @@ async function startServer() {
     };
 
     // Real Market Data Fetcher
-    const fetchMarketData = async () => {
+    let lastFetchTime = 0;
+    const fetchMarketData = async (force = false) => {
+      // Throttle fetches to once per second to avoid rate limits on serverless
+      const now = Date.now();
+      if (!force && now - lastFetchTime < 1000) return;
+      lastFetchTime = now;
+
       const activeProvider = marketSettings.providers.find(p => p.id === marketSettings.activeProviderId);
       
       for (const [displayName, yahooSymbol] of Object.entries(SYMBOL_MAP)) {
