@@ -231,7 +231,11 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
       }
       onAuthSuccess();
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/unauthorized-domain' || err.message.includes('unauthorized-domain')) {
+        setError(`Domain Unauthorized: Please add "${window.location.hostname}" to your Firebase Console > Authentication > Settings > Authorized domains.`);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -264,7 +268,11 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
       }
       onAuthSuccess();
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/unauthorized-domain' || err.message.includes('unauthorized-domain')) {
+        setError(`Domain Unauthorized: Please add "${window.location.hostname}" to your Firebase Console > Authentication > Settings > Authorized domains.`);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -323,8 +331,20 @@ const AuthView = ({ onAuthSuccess }: { onAuthSuccess: () => void }) => {
 
           <form onSubmit={handleAuth} className="space-y-4">
           {error && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-500 text-xs font-bold">
-              {error}
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-500 text-xs font-bold space-y-2">
+              <p>{error}</p>
+              {error.includes('Domain Unauthorized') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.hostname);
+                    alert('Domain copied to clipboard!');
+                  }}
+                  className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all text-[10px]"
+                >
+                  Copy Domain
+                </button>
+              )}
             </div>
           )}
           {!isLogin && (
